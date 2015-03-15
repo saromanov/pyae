@@ -347,6 +347,7 @@ class StackedAutoencoder(AutoencoderPuppet):
 	""" 
 	http://www.jmlr.org/papers/volume11/vincent10a/vincent10a.pdf
 
+	Example: gist.github.com/yusugomori
 	"""
 	def __init__(self, x, y, num_layers=None, layers=None, corruption_level=0.5, hidlayers=None):
 		"""
@@ -595,48 +596,52 @@ class GAE:
 	На входе, используется список из AE.
 	На выходе - сгенерированные новые примеры
 	"""
-	def __init__(self, x, num_hidd, aelayers, layers=None, rng=None, theano_rng=None):
+	def __init__(self, x, num_vis, num_hid, aelayers, layers=None, numpy_rng=None, theano_rng=None):
 		'''
 			aelayers - list of autoencoders
 			layers - list of number of hidden units in autoencoders
 		'''
 		self.x = x
-		self.rng = rng
+		self.numpy_rng = numpy_rng
 		self.theano_rng = theano_rng
-		self.num_hid = numpy_rng
+		self.num_vis = num_vis
+		self.num_hid = num_hid
 		self.layers = layers
-		if rng == None:
-			self.rng = np.random.RandomState()
+		if numpy_rng == None:
+			self.numpy_rng = np.random.RandomState()
 		if theano_rng == None:
 			self.theano_rng = RandomStreams()
-		par = ParametersInit(numpy_rng, 0.0, 1.1)
+		par = ParametersInit(self.numpy_rng, -0.001, 0.001)
 		self.W = par.get_weights(((num_vis, num_hid)))
-		self.params = [self.W, self.bias]
+		self.bh = theano.shared(np.asarray(np.zeros(num_hid), dtype=theano.config.floatX), name='bh')
+		self.bv = theano.shared(np.asarray(np.zeros(num_vis), dtype=theano.config.floatX), name='bv')
+		self.params = [self.W, self.bh]
 
 
 	def _corrupt(self, value):
-		return self.rng.binomial(value.shape[0], 0.5)
+		return self.numpy_rng.binomial(value.shape[0], 0.5)
 
 	def _get_grads(self, cost):
 		return T.grad(cost, self.params)
 
-	def _get_cost(self, inp):
+	def _get_cost(self, propb):
 		"""Sample from training examples x """
-		sample_x_idx = self.rng.binomial(self.num_hid, propb)
+		sample_x_idx = self.numpy_rng.binomial(self.num_hid, propb)
 		sample_x = T.dot(self.x, sample_x_idx)
-		hidden = T.dot(sample_x, self.W) + self.b
+		hidden = T.dot(sample_x, self.W) + self.bh
 		reconstruct = T.dot(hidden, self.W.T)
 		""" Corrupt this sample """
 		corrupted_sample_x = self._corrupt(sample_x)
 		""" Sample corrupted input """
-		sample_corr = self.rng.binomial(self.num_hid, propb)
+		sample_corr = self.numpy_rng.binomial(self.num_hid, propb)
 		sample_corrupted = T.dot(corrupted_sample_x, sample_corr)
 		#Добавить этот сэмпл в скрытый слой (Приблизительная реализация)
 		self.x[self.numvis + 1] = sample_corrupted
 		#Cost need to be with negative log-likelihood
 		cost = -T.mean(T.log(self.params))
 		grads = self._get_grads(cost)
-		return cost, [(para, param - lrate * gparam) for (para, gparam) in zip(self.params, grads)]
+		#return cost, [(para, param - lrate * gparam) for (para, gparam) in zip(self.params, grads)]
+		return cost
 
 	def walkback_step(self, prob=None,p=0.5):
 		""" One step for walkback process """
@@ -644,7 +649,7 @@ class GAE:
 		''' p - default probability '''
 		if prob != None:
 			''' Sample from training examples X '''
-			samplx_x_idx = self.rng.binomial(self.num_hid, prob)
+			samplx_x_idx = self.numpy_rng.binomial(self.num_hid, prob)
 		''' In the case if prob = None, pick just one example from training set '''
 
 		samplx_x_idx = self.x[np.random.randint(low=0, high=self.num_vis)]
@@ -657,17 +662,23 @@ class GAE:
 		#Append (sample_x, sample_x_corrupted) as additional training example
 		#In the last step, sample from P(X|\hat X*)
 
-	def _update_layers():
+	def _update_layers(self):
 		for layer in self.layers:
 			hidden = T.nnet.sigmoid(layer.x, self.W)
 			#Corrupt input
 
+	def _append_new_example(self,example):
+		''' Append new training example for AE '''
+		for layer in self.layers:
+			layer.x[layer.num_vis+1] = example
 
-	def train(self, propb):
+
+	def train(self, propb, num_samples=10):
 		"""
 			Main training phase
+			num_samples - number of generated samples
 		"""
-		pass
+		cost = self._get_cost(propb)
 
 
 class MarginalizedDenoisingAutoencoder(AutoencoderPuppet):
@@ -803,20 +814,23 @@ class ContrastiveAutoEncoder(Autoencoder):
 		''' trick from deeplearning.net tutorial '''
 		return T.reshape(hidden * (1 - hidden), (self.num_vis, 1, self.num_hid)) * T.reshape(W, (1, self.num_vis, self.num_hid))
 
+	def jacobian2(self, hidden, W):
+		return T.sum((hidden * (1 - hidden)**2) * T.sum(W**2))
+
 	def _cost(self, con_level=0.05):
 		hidden = self.encoder(self.x, self.W)
-		#Transpose version of W
 		decode = self.decoder(hidden, self.W)
-		J = T.sum(self.jacobian(hidden, self.W)**2)/self.num_vis
+		#J = T.sum(self.jacobian(hidden, self.W)**2)/self.num_vis
+		J = self.jacobian2(hidden, self.W)/self.num_vis
 		L = T.mean(Loss().CrossEntropy(self.x, decode)) + con_level * T.mean(J)
 		#L = T.sum(decode)
 		grads = self._get_grads(L)
 		return L, [(param, param - self.lrate * gradparam) for (param, gradparam) in zip(self.params, grads)]
 
-	def train(self):
+	def train(self,iters=100):
 		cost, updates= self._cost()
 		func = theano.function([], cost, updates=updates, givens={self.x: self.training})
-		for i in range(5):
+		for i in range(iters):
 			print(func())
 
 
