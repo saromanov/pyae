@@ -1063,7 +1063,7 @@ class VariationalAutoencoder(AutoencoderPuppet):
     '''
 
     def __init__(self, x=None, theano_input=None, num_vis=100, num_hid=50, num_encoder=10, num_decoder=10, numpy_rng=None, lrate=0.001, corruption_level=0,
-                 encoder_func='sigmoid', decoder_func=None, typeae='gaussian'):
+                 encoder_func='sigmoid', decoder_func=None, typeae='gaussian', encoder_type='gaussian', decoder_type='gaussian'):
         '''
             typeae is type for encoder/decoder
             gaussian - gaussian MLP for encoder-decoder
@@ -1072,6 +1072,8 @@ class VariationalAutoencoder(AutoencoderPuppet):
         AutoencoderPuppet.__init__(self, x=x, theano_input=theano_input, num_vis=num_vis, numpy_rng=numpy_rng, corruption_level=corruption_level,
                                    encoder_func=encoder_func, decoder_func=decoder_func)
         self.typeae = typeae
+        self.encoder_type = encoder_type
+        self.decoder_type = decoder_type
         par = ParametersInit(numpy_rng, -0.001, 0.001)
         self.W1 = par.get_weights((num_vis, num_encoder), 'W1')
         self.W2 = par.get_weights((num_encoder, num_hid), 'W2')
@@ -1129,29 +1131,28 @@ class VariationalAutoencoder(AutoencoderPuppet):
         else:
             encoder = pre
 
-        if self.typeae == 'gaussian':
+        if self.encoder_type == 'gaussian':
             # Encoder
-            mu, sigma = self.gaussian_encoder(pre)
+            mu, sigma = self.gaussian_encoder(encoder)
             noise = T.raw_random.normal(self.random_state, avg=0,std=0.001)
             prior = 1/2 * T.sum(1 + T.log(sigma**2) - mu**2 - sigma**2)
             z = mu + T.exp(sigma)
             # With this values need to construct prior
 
             # z is sampling from normal distribution or exponential
+        if self.decoder_type == 'gaussian':
             # Decoder
             result,mu_dec,sigmadec = self.gaussian_decoder(z)
             logrec = T.sum(T.log(sigmadec) - 1/2 * ((mu_dec/sigmadec))**2)
             cost = prior + logrec
             #L = 0.5 * T.sum(1 + T.log(sigma**2)  - mu**2 - sigma**2) + 0.005 * cost
             L = cost
-        if self.typeae == 'bernoulli':
-            hidden = self.bern_decoder(encoder)
+        if self.decoder_type == 'bernoulli':
+            hidden = self.bern_decoder(z)
             L = 0.005 * T.mean(Loss().CrossEntropy(self.x, hidden))
             #L = T.sum(hidden)
         epsilon = self.theano_rng.uniform(
             size=(self.num_hid, ), low=0.0, high=1.0)
-        #z = mu + sigma
-        #grads = self._get_grads(L)
         return L
 
     def train(self, batch_size=10):
