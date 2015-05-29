@@ -1062,7 +1062,7 @@ class VariationalAutoencoder(AutoencoderPuppet):
         generative model (encoder) and variational approximation (decoder)
     '''
 
-    def __init__(self, x=None, theano_input=None, num_vis=100, num_hid=50, numpy_rng=None, lrate=0.001, corruption_level=0,
+    def __init__(self, x=None, theano_input=None, num_vis=100, num_hid=50, num_encoder=10, num_decoder=10, numpy_rng=None, lrate=0.001, corruption_level=0,
                  encoder_func='sigmoid', decoder_func=None, typeae='gaussian'):
         '''
             typeae is type for encoder/decoder
@@ -1073,21 +1073,22 @@ class VariationalAutoencoder(AutoencoderPuppet):
                                    encoder_func=encoder_func, decoder_func=decoder_func)
         self.typeae = typeae
         par = ParametersInit(numpy_rng, -0.001, 0.001)
-        self.W1 = par.get_weights((num_vis, num_hid), 'W1')
-        self.W2 = par.get_weights((num_hid, num_vis), 'W2')
-        self.W3 = par.get_weights((num_hid, num_vis), 'W3')
-        self.W4 = par.get_weights((num_vis, num_hid), 'W4')
-        self.W5 = par.get_weights((num_vis, num_hid), 'W5')
+        self.W1 = par.get_weights((num_vis, num_encoder), 'W1')
+        self.W2 = par.get_weights((num_encoder, num_hid), 'W2')
+        self.W3 = par.get_weights((num_encoder, num_hid), 'W3')
+        self.W4 = par.get_weights((num_hid, num_decoder), 'W4')
+        self.W5 = par.get_weights((num_decoder, num_vis), 'W5')
+        self.W6 = par.get_weights((num_decoder, num_vis), 'W6')
         self.b1 = theano.shared(
-            np.asarray(np.zeros(num_hid), dtype=theano.config.floatX), name='b1')
+            np.asarray(np.zeros(num_encoder), dtype=theano.config.floatX), name='b1')
         self.b2 = theano.shared(
             np.asarray(np.zeros(num_hid), dtype=theano.config.floatX), name='b1')
         self.b3 = theano.shared(
-            np.asarray(np.zeros(num_vis), dtype=theano.config.floatX), name='b3')
+            np.asarray(np.zeros(num_hid), dtype=theano.config.floatX), name='b3')
         self.b4 = theano.shared(
-            np.asarray(np.zeros(num_hid), dtype=theano.config.floatX), name='b4')
+            np.asarray(np.zeros(num_decoder), dtype=theano.config.floatX), name='b4')
         self.b5 = theano.shared(
-            np.asarray(np.zeros(num_hid), dtype=theano.config.floatX), name='b5')
+            np.asarray(np.zeros(num_vis), dtype=theano.config.floatX), name='b5')
         self.params = [
             self.W1, self.W2, self.W3, self.W4, self.W5, self.b1, self.b2]
         self.random_state = T.raw_random.random_state_type()
@@ -1102,11 +1103,16 @@ class VariationalAutoencoder(AutoencoderPuppet):
         """
         return T.nnet.sigmoid(T.dot(T.tanh(T.dot(reconstructed, self.W2) + self.b2), self.W3) + self.b3)
 
-    def gaussiandecoder(self, z):
-        hidden = T.tanh(T.dot(z, self.W3) + self.b3)
-        mu = T.dot(hidden, self.W4) + self.b4
-        sigma = T.dot(hidden, self.W5) + self.b5
+    def gaussian_decoder(self, z):
+        hidden = T.tanh(T.dot(z, self.W4) + self.b4)
+        mu = T.dot(hidden, self.W5) + self.b5
+        sigma = T.nnet.sigmoid(T.dot(hidden, self.W6))
         return hidden, mu, sigma
+
+    def gaussian_encoder(self, x):
+        mu = T.dot(x, self.W2)
+        sigma = 0.5 * T.dot(x, self.W3)
+        return mu, sigma
 
     def _cost(self):
         # Sample from noise distribution
@@ -1125,21 +1131,17 @@ class VariationalAutoencoder(AutoencoderPuppet):
 
         if self.typeae == 'gaussian':
             # Encoder
-            #hidden,mu,sigma = self.gaussiandecoder(encoder)
-            mu = T.dot(pre, self.W2)
-            sigma = 0.5 * (T.dot(pre, self.W3))
-            #z = srng.normal((2,4), mu=mu)
-            zp = T.raw_random.normal(self.random_state, avg=mu, std=0.5)
+            mu, sigma = self.gaussian_encoder(pre)
             noise = T.raw_random.normal(self.random_state, avg=0,std=0.001)
             prior = 1/2 * T.sum(1 + T.log(sigma**2) - mu**2 - sigma**2)
-            z = mu + T.exp(sigma) * noise
+            z = mu + T.exp(sigma)
             # With this values need to construct prior
 
             # z is sampling from normal distribution or exponential
             # Decoder
-            result,mu_dec,sigmadec = self.gaussiandecoder(pre)
-            logcost = T.sum(T.log(sigmadec) - 1/2 * ((mu_dec/sigma_dec))**2)
-            cost = prior + rec
+            result,mu_dec,sigmadec = self.gaussian_decoder(z)
+            logrec = T.sum(T.log(sigmadec) - 1/2 * ((mu_dec/sigmadec))**2)
+            cost = prior + logrec
             #L = 0.5 * T.sum(1 + T.log(sigma**2)  - mu**2 - sigma**2) + 0.005 * cost
             L = cost
         if self.typeae == 'bernoulli':
@@ -1154,8 +1156,8 @@ class VariationalAutoencoder(AutoencoderPuppet):
 
     def train(self, batch_size=10):
         state = np.random.RandomState(1234)
-        func = theano.function([self.x, self.random_state], self._cost())
-        print(func(self.training, state))
+        func = theano.function([self.x], self._cost())
+        print(func(self.training))
 
     def _get_grads(self, cost):
         return T.grad(cost, self.params)
