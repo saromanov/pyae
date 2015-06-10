@@ -109,6 +109,9 @@ class AutoencoderPuppet:
     def train(self, batch_size=50, momentum=0.9, weight_decay=0.9):
         pass
 
+    def score(self, x1, x2):
+        return T.mean(T.neq(x1, x2))
+
     def test_model(self, validation):
         """ Validation set (typical 0.1 part of training set)
             Run this after training model and return mean error
