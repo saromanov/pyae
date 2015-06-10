@@ -5,7 +5,8 @@ from theano.tensor.shared_randomstreams import RandomStreams
 import theano.sandbox.rng_mrg as RNG_MRG
 from theano.printing import pprint
 import pickle
-from sklearn import datasets
+from softmaxregression import SoftmaxRegression
+from parametersinit import ParametersInit
 
 
 class AutoencoderPuppet:
@@ -117,10 +118,11 @@ class AutoencoderPuppet:
     def result(self):
         return self.W
 
-    def saveWeights(self, path):
+    def saveParams(self, path1, path2):
         """ Save weights to path
         """
         np.save(path, self.W.get_value())
+        np.save(path2, self.b.get_value())
 
     def loadWeights(self, path):
         self.W = np.load(path, self.W.get_value())
@@ -146,74 +148,6 @@ class Loss:
 
     def ZeroOne(self, x, y):
         pass
-
-
-class SoftmaxRegression:
-
-    """ Basic implementation of softmax regression(for Stacked Autoencoder)
-        http://ufldl.stanford.edu/wiki/index.php/Softmax_Regression
-
-        http://blog.datumbox.com/machine-learning-tutorial-the-multinomial-logistic-regression-softmax-regression/
-    """
-
-    def __init__(self, inp=None, y=None, hid_num=30, num_classes=3, numpy_rng=None, theano_inp=None, theano_labels=None, lrate=0.1, inp_num=64):
-        self.inp = inp
-        self.labels = y
-        self.num_classes = num_classes
-        self.size = num_classes
-        if theano_inp == None:
-            self.x = T.matrix('x')
-        else:
-            self.x = theano_inp
-        self.y = theano_labels
-        if theano_labels == None:
-            self.y = T.ivector('y')
-        if numpy_rng == None:
-            self.rng = np.random.RandomState(55)
-        else:
-            self.rng = numpy_rng
-        par = ParametersInit(self.rng, -0.0001, 0.0001)
-        self.W = par.get_weights((inp_num, hid_num), 'W')
-        self.bh = theano.shared(
-            np.asarray(np.zeros(hid_num), dtype=theano.config.floatX), name='bh')
-        self.lrate = lrate
-        self.params = [self.W, self.bh]
-
-    def _get_grads(self, cost):
-        return T.grad(cost, self.params)
-
-    def _add_theano_input(self, x):
-        self.x = x
-
-    def updateParams(self, newparams):
-        """ Update params during training with many layers """
-        for i in range(len(newparams)):
-            self.params[i] = newparams[i]
-
-    def forward(self):
-        value = T.nnet.softmax(T.dot(self.x, self.W) + self.bh)
-        prediction = T.argmax(value, axis=1)
-        return T.sum(T.sum(T.log(value), axis=0)) * T.sum(T.log(self.y)), prediction
-        # return -T.mean(T.log(value)[T.arange(self.y.shape[0]), self.y]), prediction
-        # return value, prediction
-
-    def cost(self, weight_decay=0.9):
-        value, prediction = self.forward()
-        #result = Loss().CrossEntropy(value, self.y) + T.sum((self.W)**2) * 1/(2 * self.num_classes)
-        #result = -T.mean(T.log(value - self.y))
-        result = -T.mean(T.log(value)[T.arange(self.y.shape[0]), self.y])
-        grads = self._get_grads(result)
-        return result, [(param, param - self.lrate * gparam) for param, gparam in zip(self.params, grads)]
-
-    def train(self):
-        cost_value, updates = self._cost()
-        #func = theano.function([], cost, updates=updates, givens={self.x: self.inp, self.y: self.labels})
-        func = theano.function(
-            [], cost_value, updates=updates, givens={self.x: self.inp, self.y: self.labels})
-        for i in range(100):
-            print("iter {0}".format(i))
-            print(func())
-
 
 class Training:
 
@@ -263,40 +197,6 @@ class Momentum:
         vel = theano.shared(0)
         result = self.momentum * vel + self.steprate * newvalue
         return oldvalue - result
-
-
-class ParametersInit:
-
-    def __init__(self, rng, low, high):
-        """
-            rng - theano or numpy
-            low - low value for init
-            high - high value for init
-        """
-        self.rng = rng
-        self.low = low
-        self.high = high
-
-    def get_weights(self, size, name, init_type='standard'):
-        """
-            size in tuple format
-            name - current name for weights
-        """
-        if init_type == 'xavier':
-            return self._initW2(size, self.low, self.high, name)
-        else:
-            return self._initW(size, name)
-
-    def _initW(self, size, name):
-        return theano.shared(value=np.asarray(
-            self.rng.uniform(low=self.low, high=self.high, size=size), dtype=theano.config.floatX
-        ))
-
-    def _initW2(self, size, nin, nout, name):
-        return theano.shared(value=np.asarray(
-            self.rng.uniform(low=-np.sqrt(6) / np.sqrt(nin + nout), high=np.sqrt(6) / np.sqrt(nin + nout),
-                             size=size), dtype=theano.config.floatX
-        ), name=self.name)
 
 
 class Autoencoder(AutoencoderPuppet):
@@ -471,7 +371,7 @@ class StackedAutoencoder(AutoencoderPuppet):
 
     """
 
-    def __init__(self, x, y, num_layers=None, layers=None, corruption_level=0.5, hidlayers=None):
+    def __init__(self, x, y, num_layers=None, layers=None, corruption_level=0.5, hidlayers=None, num_output=10):
         """
             |corruption_level| = layers
             pretrain=True - pretraing autoencoder, before main training
@@ -490,10 +390,11 @@ class StackedAutoencoder(AutoencoderPuppet):
             self.num_layers = 3
         AutoencoderPuppet.__init__(self, x)
         self.x = T.matrix('x')
-        self.y = T.matrix('y')
+        self.y = T.vector('y')
         self.training = x
         self.labels = y
         self.corruption_level = corruption_level
+        self.num_output = num_output
         # Params from all layers
         self.params = []
 
@@ -643,7 +544,7 @@ class StackedAutoencoder(AutoencoderPuppet):
         # First - input from first hidden layer
         layer_input = layers[0].x
         params = []
-        for l in range(0, len(layers)):
+        for l in range(len(layers)):
             layers[l].add_theano_input(layer_input)
             layer_cost, newinput = layers[l].output()
             layer_input = newinput
@@ -653,13 +554,13 @@ class StackedAutoencoder(AutoencoderPuppet):
 
         # Set output layer on the top of the network
         softmax = SoftmaxRegression(
-            theano_labels=labels, theano_inp=layer_input, inp_num=5, hid_num=1)
-        cost, prediction = softmax.forward()
+            theano_labels=labels, theano_inp=layer_input, inp_num=5, hid_num=self.num_output)
+        cost, updates = softmax.cost()
         '''params.extend(softmax.params)
         grads = T.grad(T.mean(cost), params)'''
         # return T.mean(cost), [(oldparam, oldparam - 0.001 * newparam) for
         # (oldparam, newparam) in zip(params, grads)]
-        return T.sum(cost)
+        return cost
 
     def start_finetune(self, layers, labels, epoch=10):
         print("Start finetuning phase: ")
@@ -667,6 +568,7 @@ class StackedAutoencoder(AutoencoderPuppet):
         value = theano.function(
             [self.x, self.y], self.finetune(layers, labels))
         print(value(self.training, self.labels))
+        print("End of finetune phase")
         '''cost, updates = self.finetune(layers, labels)
         func = theano.function([], cost, updates=updates, givens={self.x: self.training})
         for i in range(epoch):
@@ -1192,10 +1094,12 @@ class MarginalizedDenoisingAutoencoder(AutoencoderPuppet):
         rep = T.dot(prod, np.repeat(value, d))
         Wp = T.dot(self.W, self.W)
         hidden = T.tanh(np.dot(self.x, W))
-        grads = self._get_grads(Loss().CrossEntropy(hidden, decode))
+        cost = T.mean(T.nnet.binary_crossentropy(hidden, self.x))
+        grads = self._get_grads(cost)
+        return cost, [(old,newparams - old * self.learning_rate) for (old, newparams) in zip(self.params, grads)]
 
     def _get_grads(self, cost):
-        return T.grad(self._cost, self.params)
+        return T.sum(T.grad(self._cost, self.params))
 
     def train(self, p, iters=5000):
         for i in range(iters):
