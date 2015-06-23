@@ -377,25 +377,29 @@ class GatedAutoencoder(AutoencoderPuppet):
     ''' paper:
         Generative class-conditional denoising autoencoders
     '''
-    def __init__(self,x, y, num_vis, num_hid, num_out):
+    def __init__(self,x, y, num_vis, num_hid, num_out, num_fa):
+        AutoencoderPuppet.__init__(self, x=x, num_vis=num_vis, num_hid=num_hid)
         self.x = T.matrix('x')
-        self.y = T.ivector('y')
-        self.initWeights(num_vis, num_hid, 'Wh')
-        self.initWeights(num_hid, num_out, 'Wy')
-        self.initWeights(num_vis, num_out, 'Wx')
+        self.y = T.matrix('y')
+        self.inp = x
+        self.labels = y
+        self.initWeights(num_fa, num_hid, 'Wh')
+        self.initWeights(num_out, num_fa, 'Wy')
+        self.initWeights(num_vis, num_fa, 'Wx')
         self.bh = theano.shared(
             np.asarray(np.zeros(num_hid), dtype=theano.config.floatX), name='bh')
         self.bx = theano.shared(
-            np.asarray(np.zeros(num_hid), dtype=theano.config.floatX), name='bx')
+            np.asarray(np.zeros(num_vis), dtype=theano.config.floatX), name='bx')
         self.params_names = ['Wh', 'Wy', 'Wx']
         self.params = [self.bh, self.bx]
 
 
-    def _forward(self):
-        hidden = T.nnet.sigmoid(self.Wh.T * (T.dot(self.x, self.Wx) * T.dot(self.y, self.Wy) + self.bh))
-        rec = T.tanh(self.Wx.T * (T.dot(hidden, self.Wh) * T.dot(self.y, self.Wy) + self.bx))
-        return self._cost(self.x, rec)
-
+    def forward(self):
+        Wh = self.namedparams['Wh']
+        Wx = self.namedparams['Wx']
+        Wy = self.namedparams['Wy']
+        hidden = T.nnet.sigmoid(T.dot((T.dot(self.x, Wx) * T.dot(self.y, Wy)), Wh))
+        rec = T.tanh(T.dot((T.dot(hidden, Wh.T) * T.dot(self.y, Wy)), Wx.T))
 
 class StackedAutoencoder(AutoencoderPuppet):
 
