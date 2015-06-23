@@ -30,6 +30,7 @@ class AutoencoderPuppet:
             (bouth can be None)
         '''
         self.training = x
+        self.namedparams = {}
         if theano_input == None:
             self.x = T.matrix('x')
         else:
@@ -43,7 +44,9 @@ class AutoencoderPuppet:
             self.theano_rng = RandomStreams()
         w_init = 4 * np.sqrt(6. / (num_hid + num_vis))
         par = ParametersInit(self.numpy_rng, -w_init, w_init)
+        self.par = par
         self.W = par.get_weights((num_vis, num_hid), 'W')
+        self.namedparams['W'] = self.W
         if tied_weights == False:
             self.W2 = par.get_weights((num_hid, num_vis), 'W2')
         # Bias init as zero
@@ -79,6 +82,13 @@ class AutoencoderPuppet:
         """ One step for update params
         """
         grads = self._get_grads(cost)'''
+
+    def initWeights(self, weight, heights, name):
+        """ Init weights needs for more easy initialization
+            of weights for complex models
+        """
+        self.namedparams[name] = self.par.get_weights((weight, heights), name)
+
 
     def setWeights(self, newW):
         """ Append new weights """
@@ -363,7 +373,6 @@ class HiddenLayer:
             func = T.tanh
         return func(T.dot(self.x, self.W) + self.bh)
 
-
 class StackedAutoencoder(AutoencoderPuppet):
 
     """
@@ -556,9 +565,8 @@ class StackedAutoencoder(AutoencoderPuppet):
             params.extend(layer.params)'''
 
         # Set output layer on the top of the network
-        softmax = SoftmaxRegression(
-            theano_labels=labels, theano_inp=layer_input, inp_num=5, hid_num=self.num_output)
-        cost, updates = softmax.cost()
+        softmax = SoftmaxRegression(layer_input, self.y, inp_num=5, hid_num=self.num_output)
+        cost = softmax.cost()
         '''params.extend(softmax.params)
         grads = T.grad(T.mean(cost), params)'''
         # return T.mean(cost), [(oldparam, oldparam - 0.001 * newparam) for
