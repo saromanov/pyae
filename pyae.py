@@ -373,6 +373,30 @@ class HiddenLayer:
             func = T.tanh
         return func(T.dot(self.x, self.W) + self.bh)
 
+class GatedAutoencoder(AutoencoderPuppet):
+    ''' paper:
+        Generative class-conditional denoising autoencoders
+    '''
+    def __init__(self,x, y, num_vis, num_hid, num_out):
+        self.x = T.matrix('x')
+        self.y = T.ivector('y')
+        self.initWeights(num_vis, num_hid, 'Wh')
+        self.initWeights(num_hid, num_out, 'Wy')
+        self.initWeights(num_vis, num_out, 'Wx')
+        self.bh = theano.shared(
+            np.asarray(np.zeros(num_hid), dtype=theano.config.floatX), name='bh')
+        self.bx = theano.shared(
+            np.asarray(np.zeros(num_hid), dtype=theano.config.floatX), name='bx')
+        self.params_names = ['Wh', 'Wy', 'Wx']
+        self.params = [self.bh, self.bx]
+
+
+    def _forward(self):
+        hidden = T.nnet.sigmoid(self.Wh.T * (T.dot(self.x, self.Wx) * T.dot(self.y, self.Wy) + self.bh))
+        rec = T.tanh(self.Wx.T * (T.dot(hidden, self.Wh) * T.dot(self.y, self.Wy) + self.bx))
+        return self._cost(self.x, rec)
+
+
 class StackedAutoencoder(AutoencoderPuppet):
 
     """
