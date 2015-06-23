@@ -1013,6 +1013,8 @@ class VariationalAutoencoder(AutoencoderPuppet):
         AutoencoderPuppet.__init__(self, x=x, theano_input=theano_input, num_vis=num_vis, numpy_rng=numpy_rng, corruption_level=corruption_level,
                                    encoder_func=encoder_func, decoder_func=decoder_func)
         self.typeae = typeae
+        self.num_hid = num_hid
+        self.size = x.shape[0]
         self.encoder_type = encoder_type
         self.decoder_type = decoder_type
         par = ParametersInit(numpy_rng, -0.001, 0.001)
@@ -1034,6 +1036,7 @@ class VariationalAutoencoder(AutoencoderPuppet):
             np.asarray(np.zeros(num_vis), dtype=theano.config.floatX), name='b5')
         self.params = [
             self.W1, self.W2, self.W3, self.W4, self.W5, self.b1, self.b2]
+        self.noise = T.matrix('noise')
         self.random_state = T.raw_random.random_state_type()
 
     def _costructAE(self, typeae):
@@ -1077,7 +1080,7 @@ class VariationalAutoencoder(AutoencoderPuppet):
             mu, sigma = self.gaussian_encoder(encoder)
             noise = T.raw_random.normal(self.random_state, avg=0,std=0.001)
             prior = 1/2 * T.sum(1 + T.log(sigma**2) - mu**2 - sigma**2)
-            z = mu + T.exp(sigma)
+            z = mu + T.exp(sigma) * self.noise
             # With this values need to construct prior
 
             # z is sampling from normal distribution or exponential
@@ -1086,7 +1089,6 @@ class VariationalAutoencoder(AutoencoderPuppet):
             result,mu_dec,sigmadec = self.gaussian_decoder(z)
             logrec = T.sum(T.log(sigmadec) - 1/2 * ((mu_dec/sigmadec))**2)
             cost = prior + logrec
-            #L = 0.5 * T.sum(1 + T.log(sigma**2)  - mu**2 - sigma**2) + 0.005 * cost
             L = cost
         if self.decoder_type == 'bernoulli':
             hidden = self.bern_decoder(z)
@@ -1098,8 +1100,9 @@ class VariationalAutoencoder(AutoencoderPuppet):
 
     def train(self, batch_size=10):
         state = np.random.RandomState(1234)
-        func = theano.function([self.x], self._cost())
-        print(func(self.training))
+        noise = np.random.random((self.size, self.num_hid))
+        func = theano.function([self.x, self.noise], self._cost())
+        print(func(self.training, noise))
 
     def _get_grads(self, cost):
         return T.grad(cost, self.params)
