@@ -11,7 +11,7 @@ class SoftmaxRegression:
         http://blog.datumbox.com/machine-learning-tutorial-the-multinomial-logistic-regression-softmax-regression/
     """
 
-    def __init__(self, inp=None, y=None, hid_num=30, num_classes=3, numpy_rng=None, theano_inp=None, theano_labels=None, lrate=0.1, inp_num=64):
+    def __init__(self, inp, y, hid_num=30, num_classes=3, numpy_rng=None, theano_inp=None, theano_labels=None, lrate=0.1, inp_num=64):
         self.inp = inp
         self.labels = y
         self.num_classes = num_classes
@@ -52,10 +52,10 @@ class SoftmaxRegression:
         #return T.sum(T.sum(T.log(value), axis=0)) * T.sum(T.log(self.y)), prediction
 
     def cost(self, weight_decay=0.9):
-        value, prediction, = self.forward()
-        #result = -T.mean(T.log(value)[T.arange(self.y.shape[0]), self.y])
-        result = T.log(value) + T.mean(self.y)
-        return result, value
+        value, prediction = self.forward()
+        result = -T.mean(T.log(value)[T.arange(self.y.shape[0]), self.y])
+        #result = T.sum(self.y * T.log(value) + (1 - self.y * T.log(1 - value)))
+        return result
         #grads = self._get_grads(result)
         #return result, [(param, param - self.lrate * gparam) for param, gparam in zip(self.params, grads)]
 
