@@ -46,7 +46,6 @@ class AutoencoderPuppet:
         par = ParametersInit(self.numpy_rng, -w_init, w_init)
         self.par = par
         self.W = par.get_weights((num_vis, num_hid), 'W')
-        self.namedparams['W'] = self.W
         if tied_weights == False:
             self.W2 = par.get_weights((num_hid, num_vis), 'W2')
         # Bias init as zero
@@ -399,7 +398,23 @@ class GatedAutoencoder(AutoencoderPuppet):
         Wx = self.namedparams['Wx']
         Wy = self.namedparams['Wy']
         hidden = T.nnet.sigmoid(T.dot((T.dot(self.x, Wx) * T.dot(self.y, Wy)), Wh))
-        rec = T.tanh(T.dot((T.dot(hidden, Wh.T) * T.dot(self.y, Wy)), Wx.T))
+        return T.tanh(T.dot((T.dot(hidden, Wh.T) * T.dot(self.y, Wy)), Wx.T))
+
+    def cost(self, xorig, xhat):
+        return T.nnet.categorical_crossentropy(xorig, xhat)
+
+    def fit(self):
+        self.params = list(self.namedparams.values())
+        forw = self.forward()
+        cost_result = T.mean(self.cost(self.x, forw))
+        grad = T.grad(cost_result, self.params)
+        return cost_result, [(old, old - 0.001 * newparam) for(old, newparam) in zip(self.params, grad)]
+
+    def train(self, iters=100):
+        value, updates = self.fit()
+        for i in range(iters):
+            func = theano.function([], value, updates=updates, givens={self.x: self.inp, self.y: self.labels})
+            print(func())
 
 class StackedAutoencoder(AutoencoderPuppet):
 
