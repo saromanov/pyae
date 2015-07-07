@@ -416,7 +416,7 @@ class GatedAutoencoder(AutoencoderPuppet):
             func = theano.function([], value, updates=updates, givens={self.x: self.inp, self.y: self.labels})
             print(func())
 
-class StackedAutoencoder(AutoencoderPuppet):
+class StackedAutoencoder:
 
     """
     http://www.jmlr.org/papers/volume11/vincent10a/vincent10a.pdf
@@ -443,7 +443,6 @@ class StackedAutoencoder(AutoencoderPuppet):
             self.num_layers = len(layers)
         else:
             self.num_layers = 3
-        AutoencoderPuppet.__init__(self, x)
         self.x = T.matrix('x')
         self.y = T.vector('y')
         self.training = x
@@ -461,7 +460,7 @@ class StackedAutoencoder(AutoencoderPuppet):
         if pretrain == 'glw':
             hidden_layers, new_layers = self._getAEs(self.layers)
             #after_pre_train_layers = self._pre_train(new_layers)
-            after_fine_tune = self.start_finetune(new_layers,  self.y)
+            after_fine_tune = self.start_finetune(self.layers,  self.y)
             return after_fine_tune
 
     def train(self, iters=5000, pretrain=None, method='backprop'):
@@ -597,21 +596,22 @@ class StackedAutoencoder(AutoencoderPuppet):
         layer_result = []
         # Forward propagation
         # First - input from first hidden layer
-        layer_input = layers[0].x
+        layer_input = self.x
         params = []
         for l in range(len(layers)):
             layers[l].add_theano_input(layer_input)
             layer_cost, newinput = layers[l].output()
             layer_input = newinput
-        '''for layer in layers:
+        for layer in layers:
             """ Get params from all layers """
-            params.extend(layer.params)'''
+            params.extend(layer.params)
 
         # Set output layer on the top of the network
+        print(theano.pprint(layer_input))
         softmax = SoftmaxRegression(layer_input, self.y, inp_num=5, hid_num=self.num_output)
         cost = softmax.cost()
-        '''params.extend(softmax.params)
-        grads = T.grad(T.mean(cost), params)'''
+        params.extend(softmax.params)
+        grads = T.grad(T.mean(cost), params)
         # return T.mean(cost), [(oldparam, oldparam - 0.001 * newparam) for
         # (oldparam, newparam) in zip(params, grads)]
         return cost
