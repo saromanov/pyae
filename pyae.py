@@ -650,13 +650,12 @@ class StackedAutoencoder(AutoencoderPuppet):
 class SparseAutoencoder(AutoencoderPuppet):
 
     def __init__(self, x, num_vis, num_hid, weights=None, bias=None):
+        AutoencoderPuppet.__init__(self, x=x, num_vis=num_vis, num_hid=num_hid)
         self.inp = x
+        self.nhid = num_hid
         self.all_numbers = x.shape[0]
         self.x = T.matrix('x')
-        self.W = weights
-        if weights == None:
-            par = ParametersInit(numpy_rng, 0.0, 1.1)
-            self.W = par.get_weights(((num_vis, num_hid)))
+        self.initWeights(num_vis, num_hid, 'Wh')
         self.bh = theano.shared(
             np.asarray(np.zeros(num_hid), dtype=theano.config.floatX), name='bh')
         self.bv = theano.shared(
@@ -671,14 +670,29 @@ class SparseAutoencoder(AutoencoderPuppet):
         after_kl = self._KL(hidden_level, avg)
         return regularization_level * after_kl
 
+    def encoder(self, x, W, b):
+        return T.nnet.sigmoid(T.dot(x, W) + b)
+
     def _cost(self, sigma=0.01, beta=None):
-        hidden = self.encoder(value, self.W)
+        W = self.namedparams['Wh']
+        hidden = self.encoder(self.x, W, self.bh)
         # Transpose version of W
-        decode = self.encoder(hiddenself.W.T)
-        L = -T.sum(hidden * T.log(decode) + (1 - hidden) * T.log(1 - decode))
+        decode = self.encoder(hidden, W.T, self.bv)
+        L = T.sum(T.nnet.categorical_crossentropy(self.x, decode))
         L += self._penalty(hidden, sigma)
-        grad = T.grad(L, self.params)
-        return T.mean(L)
+        params = []
+        params.extend(list(self.namedparams.values()))
+        params.append(self.bh)
+        params.append(self.bv)
+        grad = T.grad(T.mean(L), params)
+        return T.mean(L), [(old, old - 0.001 * newparam) for (old, newparam) in zip(params, grad)]
+
+    def train(self, iters=100):
+        cost, updates = self._cost()
+        for i in range(iters):
+            func = theano.function([], cost, updates=updates, givens = {self.x:self.inp})
+            print(func())
+
 
 
 class TwoCostAutoencoder(AutoencoderPuppet):
