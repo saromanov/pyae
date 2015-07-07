@@ -695,6 +695,34 @@ class SparseAutoencoder(AutoencoderPuppet):
 
 
 
+class KSparseAutoencoder(AutoencoderPuppet):
+    ''' Implementation of k-sparse autoencoder
+    '''
+    def __init__(self, x, num_vis, num_hid, weights=None, bias=None):
+        AutoencoderPuppet.__init__(self, x=x, num_vis=num_vis, num_hid=num_hid)
+        self.inp = x
+        self.nhid = num_hid
+        self.all_numbers = x.shape[0]
+        self.x = T.matrix('x')
+        self.initWeights(num_vis, num_hid, 'Wh')
+        self.bh = theano.shared(
+            np.asarray(np.zeros(num_hid), dtype=theano.config.floatX), name='bh')
+        self.bv = theano.shared(
+            np.asarray(np.zeros(num_vis), dtype=theano.config.floatX), name='bv')
+
+    def encode(self, xn, W, b):
+        return T.nnet.sigmoid(T.dot(xn, W) + b)
+
+    def _k_highest(self, k, value):
+        return value
+
+    def _cost(self, k):
+        W = self.namedparams['Wh']
+        hidden = self.encode(self.x, W)
+        after = self._k_highest(k, hidden)
+
+
+
 class TwoCostAutoencoder(AutoencoderPuppet):
 
     """ Using both supervised and unsupervised cost
