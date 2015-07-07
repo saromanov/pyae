@@ -28,9 +28,9 @@ class SoftmaxRegression:
         else:
             self.rng = numpy_rng
         par = ParametersInit(self.rng, -0.0001, 0.0001)
-        self.W = par.get_weights((inp_num, hid_num), 'W')
+        self.W = par.get_weights((inp_num, hid_num), 'Wreg')
         self.bh = theano.shared(
-            np.asarray(np.zeros(hid_num), dtype=theano.config.floatX), name='bh')
+            np.asarray(np.zeros(hid_num), dtype=theano.config.floatX), name='bhreg')
         self.lrate = lrate
         self.params = [self.W, self.bh]
 
