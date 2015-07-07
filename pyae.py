@@ -701,14 +701,23 @@ class TwoCostAutoencoder(AutoencoderPuppet):
         http://arxiv.org/pdf/1412.6583v3.pdf
     """
 
-    def __init__(self, x=None, theano_input=None, num_vis=100, num_hid=50, numpy_rng=None, lrate=0.001,
+    def __init__(self, x=None, y=None, theano_input=None, num_vis=100, num_hid=50, numpy_rng=None, lrate=0.001,
                  momentum=0.9, corruption_level=0, encoder_func='sigmoid', decoder_func=None):
-        TwoCostAutoencoder.__init__(self, x=x, theano_input=theano_input, num_vis=num_vis, numpy_rng=numpy_rng, corruption_level=corruption_level,
+        AutoencoderPuppet.__init__(self, x=x, theano_input=theano_input, num_vis=num_vis, numpy_rng=numpy_rng, corruption_level=corruption_level,
                                     encoder_func=encoder_func, decoder_func=decoder_func, momentum=momentum, tied_weights=True, cost_func='lse')
+        self.x = T.matrix('x')
+        self.y = T.matrix('y')
 
-        def _cost(self):
-            hidden = self.encoder(self.x)
-            hidden2 = self.encoder(self.x, corrupt=self.corruption_level)
+        def _cost(self, beta=0.01, sigma=0.05):
+            #hidden = self.encoder(self.x)
+            hidden = self.encoder(self.x, corrupt=self.corruption_level)
+            decode = self.encoder(self.x, W.T)
+            yhat = T.nnet.softmax(T.dot(hidden2, Wy) + self.by)
+            cost1 = T.sum(T.sqr(self.x, decode))
+            cost2 = T.sum(self.y * T.log(yhat))
+            cost3 = sigma * C
+            cost = cost1 + beta * cost2 + cost3
+
 
 
 # http://www.cor-lab.de/non-negative-sparse-autoencoder
