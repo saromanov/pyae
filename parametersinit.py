@@ -18,10 +18,7 @@ class ParametersInit:
             size in tuple format
             name - current name for weights
         """
-        if init_type == 'xavier':
-            return self._initW2(size, self.low, self.high, name)
-        else:
-            return self._initW(size, name)
+        return self._initW2(size, self.low, self.high, name)
 
     def _initW(self, size, name):
         return theano.shared(value=np.asarray(
@@ -32,6 +29,6 @@ class ParametersInit:
         return theano.shared(value=np.asarray(
             self.rng.uniform(low=-np.sqrt(6) / np.sqrt(nin + nout), high=np.sqrt(6) / np.sqrt(nin + nout),
                              size=size), dtype=theano.config.floatX
-        ), name=self.name)
+        ), name=name)
 
 
