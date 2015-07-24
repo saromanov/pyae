@@ -217,7 +217,7 @@ class Autoencoder(AutoencoderPuppet):
                  encoder_func='sigmoid', decoder_func=None, tied_weights=True):
         AutoencoderPuppet.__init__(self, x=x, theano_input=theano_input, num_vis=num_vis, num_hid=num_hid, numpy_rng=numpy_rng, corruption_level=corruption_level,
                                    encoder_func=encoder_func, decoder_func=decoder_func, momentum=momentum, tied_weights=tied_weights, lrate=lrate)
-        self.params = [self.W, self.bv, self.bh]
+        self.params = [self.W, self.bh]
         self.traindata = Training(lrate, momentum=momentum)
 
     def append_event(self, iter, event):
@@ -444,7 +444,7 @@ class StackedAutoencoder:
         else:
             self.num_layers = 3
         self.x = T.matrix('x')
-        self.y = T.vector('y')
+        self.y = T.ivector('y')
         self.training = x
         self.labels = y
         self.corruption_level = corruption_level
@@ -460,7 +460,7 @@ class StackedAutoencoder:
         if pretrain == 'glw':
             hidden_layers, new_layers = self._getAEs(self.layers)
             #after_pre_train_layers = self._pre_train(new_layers)
-            after_fine_tune = self.start_finetune(self.layers,  self.y)
+            after_fine_tune = self.start_finetune(self.layers)
             return after_fine_tune
 
     def train(self, iters=5000, pretrain=None, method='backprop'):
@@ -582,7 +582,7 @@ class StackedAutoencoder:
         print("End of pretrain phase", len(layers))
         return layers
 
-    def finetune(self, layers, labels, epoch=10):
+    def finetune(self, layers, epoch=10):
         """
             Supervised phase
             Forward and backward propagations и градиенты
@@ -593,7 +593,6 @@ class StackedAutoencoder:
             but rather good predictive performance on some classification task.
             http://www.quora.com/Deep-learning-UFLDL-Stack-Autoencoder-exercise-How-to-finetune-without-any-classifier-Softmax-classifier
         """
-        layer_result = []
         # Forward propagation
         # First - input from first hidden layer
         layer_input = self.x
@@ -601,27 +600,28 @@ class StackedAutoencoder:
         for l in range(len(layers)):
             layers[l].add_theano_input(layer_input)
             layer_cost, newinput = layers[l].output()
+            params.extend(layers[l].params)
             layer_input = newinput
-        for layer in layers:
+        '''for layer in layers:
             """ Get params from all layers """
-            params.extend(layer.params)
+            params.extend(layer.params)'''
 
         # Set output layer on the top of the network
-        print(theano.pprint(layer_input))
-        softmax = SoftmaxRegression(layer_input, self.y, inp_num=5, hid_num=self.num_output)
-        cost = softmax.cost()
+        softmax = SoftmaxRegression(theano_labels=self.y, inp_num=15, hid_num=self.num_output)
+        softmax.add_theano_input(layer_input)
+        cost= softmax.cost()
         params.extend(softmax.params)
         grads = T.grad(T.mean(cost), params)
-        # return T.mean(cost), [(oldparam, oldparam - 0.001 * newparam) for
-        # (oldparam, newparam) in zip(params, grads)]
-        return cost
+        return T.mean(cost), [(oldparam, oldparam - 0.001 * newparam) for
+         (oldparam, newparam) in zip(params, grads)]
+        #return cost
 
-    def start_finetune(self, layers, labels, epoch=10):
+    def start_finetune(self, layers, epoch=10):
         print("Start finetuning phase: ")
-
-        value = theano.function(
-            [self.x, self.y], self.finetune(layers, labels))
-        print(value(self.training, self.labels))
+        cost, updates = self.finetune(layers)
+        value = theano.function([],
+                cost, updates=updates, givens={self.x: self.training, self.y: self.labels})
+        print(value())
         print("End of finetune phase")
         '''cost, updates = self.finetune(layers, labels)
         func = theano.function([], cost, updates=updates, givens={self.x: self.training})
